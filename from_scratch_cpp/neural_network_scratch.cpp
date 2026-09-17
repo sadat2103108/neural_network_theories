@@ -29,7 +29,8 @@ enum Activation {
     NONE,
     SIGMOID,
     RELU,
-    TANH
+    TANH,
+    SOFTMAX
 };
 
 double activate(double z, Activation activation) {
@@ -66,6 +67,8 @@ double activationDerivative(double z, Activation activation) {
             double t = std::tanh(z);
             return 1.0 - t * t;
         }
+
+        
 
         case NONE:
             return 1.0;
