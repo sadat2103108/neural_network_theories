@@ -30,43 +30,6 @@ The same ideas are implemented twice from two different mental models:
 - **Python — matrix model:** the whole layer is three NumPy arrays (`W`, `b`) and backprop
   collapses into a handful of matrix multiplications. This is what frameworks do internally.
 
----
-
-## Repository Layout
-
-```
-mnist_from_scratch/
-├── README.md
-├── .gitignore
-├── data/                                  # MNIST IDX files (raw binary)
-│   ├── train-images-idx3-ubyte            # 60,000 training images (28x28)
-│   ├── train-labels-idx1-ubyte
-│   ├── t10k-images-idx3-ubyte             # 10,000 test images
-│   └── t10k-labels-idx1-ubyte
-│
-├── from_scratch_cpp/                      # Phase 4: graph-of-neurons network
-│   ├── neural_network_scratch_raw.cpp     # first full draft
-│   └── neural_network_scratch.cpp         # polished / generalized version
-│
-├── re_learn_from_scratch_python/          # Phases 1-3 + 5: relearning in Python
-│   ├── perceptron/
-│   │   ├── 1_perceptron_learns_OR.py
-│   │   ├── 2_perceptrons_learns_XOR.py
-│   │   └── 3_fixed_perceptron_learns_XOR.py
-│   └── THEORY_FCNN_MNIST/
-│       ├── mnist_theory.ipynb             # theory notes + full FCNN pipeline
-│       └── weights.npz                    # saved trained parameters
-│
-└── digit_recognition/                     # Phase 6: camera web app (inference only)
-│   ├── main.py                            # Flask server + /predict endpoint
-│   ├── neural_network.py                  # loads weights.npz, forward pass only
-│   ├── image_utils.py                     # camera image -> MNIST-style (1, 784)
-│   ├── weights.npz                        # copy of the trained weights from Part 3
-│   ├── templates/
-│   │   └── index.html                     # camera UI (guide box, capture, prediction)
-│   ├── image/                             # last captured image
-│   └── debug/                             # intermediate preprocessing images
-```
 
 ---
 
