@@ -20,6 +20,7 @@ network trained on **MNIST** — with the theory written out notebook-by-noteboo
 | 3 | The same XOR task **fixed**: `tanh` + BCE + 3 hidden neurons | `re_learn_from_scratch_python/perceptron/3_fixed_perceptron_learns_XOR.py` |
 | 4 | The **graph-of-neurons** network in C++, generalized to any layer shape, trained on MNIST | `from_scratch_cpp/neural_network_scratch_raw.cpp`, `.../neural_network_scratch.cpp` |
 | 5 | The **matrix formulation** of a fully connected network, MNIST at ~97.5% test accuracy, with full theory notes | `re_learn_from_scratch_python/THEORY_FCNN_MNIST/mnist_theory.ipynb` |
+| 6 | The trained weights put to use: a **Flask web app** that recognizes camera-captured digits | `digit_recognition/` |
 
 The same ideas are implemented twice from two different mental models:
 
@@ -47,14 +48,24 @@ mnist_from_scratch/
 │   ├── neural_network_scratch_raw.cpp     # first full draft
 │   └── neural_network_scratch.cpp         # polished / generalized version
 │
-└── re_learn_from_scratch_python/          # Phases 1-3 + 5: relearning in Python
-    ├── perceptron/
-    │   ├── 1_perceptron_learns_OR.py
-    │   ├── 2_perceptrons_learns_XOR.py
-    │   └── 3_fixed_perceptron_learns_XOR.py
-    └── THEORY_FCNN_MNIST/
-        ├── mnist_theory.ipynb             # theory notes + full FCNN pipeline
-        └── weights.npz                    # saved trained parameters
+├── re_learn_from_scratch_python/          # Phases 1-3 + 5: relearning in Python
+│   ├── perceptron/
+│   │   ├── 1_perceptron_learns_OR.py
+│   │   ├── 2_perceptrons_learns_XOR.py
+│   │   └── 3_fixed_perceptron_learns_XOR.py
+│   └── THEORY_FCNN_MNIST/
+│       ├── mnist_theory.ipynb             # theory notes + full FCNN pipeline
+│       └── weights.npz                    # saved trained parameters
+│
+└── digit_recognition/                     # Phase 6: camera web app (inference only)
+│   ├── main.py                            # Flask server + /predict endpoint
+│   ├── neural_network.py                  # loads weights.npz, forward pass only
+│   ├── image_utils.py                     # camera image -> MNIST-style (1, 784)
+│   ├── weights.npz                        # copy of the trained weights from Part 3
+│   ├── templates/
+│   │   └── index.html                     # camera UI (guide box, capture, prediction)
+│   ├── image/                             # last captured image
+│   └── debug/                             # intermediate preprocessing images
 ```
 
 ---
@@ -277,6 +288,63 @@ The notebook loads data from `../../data/`, i.e. the repository-root `data/` fol
 
 ---
 
+## Part 4 — Inference App: Camera Digit Recognition
+
+**Files:** `digit_recognition/`
+**Pretrained weights:** `digit_recognition/weights.npz`
+
+A Flask web app that recognizes digits captured with a camera. It does **no training** — it loads
+the `weights.npz` trained in Part 3 and only runs forward propagation. The weights are a copy of
+the ones from my theory notebook:
+
+**neural_network_theories → re_learn_from_scratch_python/THEORY_FCNN_MNIST**
+
+https://github.com/sadat2103108/neural_network_theories/tree/main/re_learn_from_scratch_python/THEORY_FCNN_MNIST
+
+### Files
+
+- `main.py` — Flask server. Serves the page, accepts `POST /predict` (base64 PNG), saves the
+  capture, converts it, and returns the predicted digit as JSON.
+- `neural_network.py` — loads `W1, b1, W2, b2` from `weights.npz` and runs the same forward pass
+  as the notebook (`X@W1+b1 → ReLU → @W2+b2 → softmax → argmax`), inference only.
+- `image_utils.py` — turns a camera photo into an MNIST-style `(1, 784)` float array.
+- `templates/index.html` — the camera UI: video preview, red guide box, capture button, and the
+  `fetch` call to `/predict`.
+
+### How it works
+
+1. The browser opens the camera (`getUserMedia`, environment camera when available) and overlays
+   a square guide box on the video.
+2. **Capture & Predict** crops the video to that guide box, exports a base64 PNG, and `POST`s it
+   to `/predict`.
+3. The server decodes and saves the image, then `image_to_mnist()`:
+   - flattens illumination (divide by a heavily blurred copy) to cancel shadows and uneven light;
+   - thresholds with Otsu plus an adaptive threshold, keeping only genuinely dark pixels;
+   - closes small gaps (`_repair_broken_strokes`) and removes tiny noise components;
+   - groups nearby stroke parts and picks the most central/complete digit (`_find_digit_box`);
+   - resizes to a 20×20 region on a black 28×28 canvas and centers it by center of mass;
+   - scales to `0.0–1.0` and flattens to `(1, 784)`.
+4. `nn.predict(X)` returns the digit, which the page displays.
+
+### Run
+
+```bash
+cd digit_recognition
+pip install flask numpy opencv-python
+python main.py
+```
+
+Open **http://127.0.0.1:5000** (use this exact address, since `getUserMedia` only works in a
+secure context and localhost counts as one).
+
+### Debug images
+
+Each request writes the intermediate stages to `digit_recognition/debug/` — `01_gray`,
+`02_flattened`, `03_before_repair`, `04_after_repair`, and `05_final_mnist.png`, the exact 28×28
+array the network saw. This is the fastest way to debug a wrong prediction.
+
+---
+
 ## Concepts Covered End-to-End
 
 - The artificial neuron: weighted sum + bias + activation
@@ -292,15 +360,20 @@ The notebook loads data from `../../data/`, i.e. the repository-root `data/` fol
 - Vectorization and NumPy broadcasting
 - Saving/loading trained weights and separating training from inference
 - Why the matrix formulation is both simpler and faster than the graph-of-neurons form
+- Deploying a trained network for inference in a web app, and preparing noisy camera photos
+  (illumination flattening, Otsu + adaptive thresholding, stroke repair, centering) into the
+  MNIST input format
 
 ## Requirements
 
 - **C++**: any compiler with C++17 (`g++`); no external libraries.
 - **Python**: `numpy`, `matplotlib`, and Jupyter (for the notebook). The perceptron scripts
   need only `numpy` (plus the standard-library `random`/`math` for the first one).
+- **Web app** (`digit_recognition/`): `flask` and `opencv-python` in addition to `numpy`.
 
 ```bash
 pip install numpy matplotlib jupyter
+pip install flask numpy opencv-python
 ```
 
 ## Data

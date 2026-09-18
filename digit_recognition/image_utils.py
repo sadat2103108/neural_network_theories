@@ -33,31 +33,135 @@ def _remove_small_components(
     return cleaned
 
 
-def _find_digit_box(binary_image: np.ndarray):
-    """
-    Find the component most likely to be the digit.
 
-    A temporary dilation joins small broken parts of the handwritten digit.
-    The original binary image is not permanently dilated here.
+def _repair_broken_strokes(
+    binary_image: np.ndarray
+) -> np.ndarray:
+    """
+    Repair small horizontal, vertical and diagonal gaps
+    without using aggressive opening.
     """
 
     height, width = binary_image.shape
     minimum_dimension = min(height, width)
 
-    grouping_size = _make_odd(minimum_dimension * 0.025)
+    # General closing for small gaps in any direction.
+    general_size = _make_odd(
+        np.clip(
+            minimum_dimension * 0.012,
+            3,
+            13
+        )
+    )
+
+    general_kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE,
+        (general_size, general_size)
+    )
+
+    repaired = cv2.morphologyEx(
+        binary_image,
+        cv2.MORPH_CLOSE,
+        general_kernel,
+        iterations=2
+    )
+
+    # Repair slightly larger horizontal and vertical breaks.
+    directional_size = _make_odd(
+        np.clip(
+            minimum_dimension * 0.025,
+            5,
+            21
+        )
+    )
+
+    horizontal_kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT,
+        (directional_size, 3)
+    )
+
+    vertical_kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT,
+        (3, directional_size)
+    )
+
+    horizontal_repair = cv2.morphologyEx(
+        repaired,
+        cv2.MORPH_CLOSE,
+        horizontal_kernel,
+        iterations=1
+    )
+
+    vertical_repair = cv2.morphologyEx(
+        repaired,
+        cv2.MORPH_CLOSE,
+        vertical_kernel,
+        iterations=1
+    )
+
+    repaired = cv2.bitwise_or(
+        repaired,
+        horizontal_repair
+    )
+
+    repaired = cv2.bitwise_or(
+        repaired,
+        vertical_repair
+    )
+
+    # If the digit is extremely thin, make it slightly thicker.
+    foreground_ratio = (
+        cv2.countNonZero(repaired) /
+        float(height * width)
+    )
+
+    if foreground_ratio < 0.035:
+        thickening_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (3, 3)
+        )
+
+        repaired = cv2.dilate(
+            repaired,
+            thickening_kernel,
+            iterations=1
+        )
+
+    return repaired
+
+
+
+
+def _find_digit_box(binary_image: np.ndarray):
+    """
+    Group nearby broken digit parts and find one bounding box
+    containing the complete digit.
+    """
+
+    height, width = binary_image.shape
+    minimum_dimension = min(height, width)
+
+    grouping_size = _make_odd(
+        np.clip(
+            minimum_dimension * 0.05,
+            7,
+            31
+        )
+    )
 
     grouping_kernel = cv2.getStructuringElement(
         cv2.MORPH_ELLIPSE,
         (grouping_size, grouping_size)
     )
 
+    # This image is only used for grouping components.
     grouped_image = cv2.dilate(
         binary_image,
         grouping_kernel,
-        iterations=1
+        iterations=2
     )
 
-    number_of_labels, _, stats, centroids = (
+    number_of_labels, labels, stats, centroids = (
         cv2.connectedComponentsWithStats(
             grouped_image,
             connectivity=8
@@ -67,37 +171,51 @@ def _find_digit_box(binary_image: np.ndarray):
     image_center_x = (width - 1) / 2.0
     image_center_y = (height - 1) / 2.0
 
-    best_box = None
+    best_label = None
     best_score = -1.0
 
     for label_number in range(1, number_of_labels):
         x = stats[label_number, cv2.CC_STAT_LEFT]
         y = stats[label_number, cv2.CC_STAT_TOP]
-        box_width = stats[label_number, cv2.CC_STAT_WIDTH]
-        box_height = stats[label_number, cv2.CC_STAT_HEIGHT]
-        area = stats[label_number, cv2.CC_STAT_AREA]
+
+        box_width = stats[
+            label_number,
+            cv2.CC_STAT_WIDTH
+        ]
+
+        box_height = stats[
+            label_number,
+            cv2.CC_STAT_HEIGHT
+        ]
+
+        area = stats[
+            label_number,
+            cv2.CC_STAT_AREA
+        ]
 
         if area < 10:
             continue
 
-        component_x, component_y = centroids[label_number]
+        component_x, component_y = (
+            centroids[label_number]
+        )
 
         normalized_x = (
-            (component_x - image_center_x) /
-            max(width / 2.0, 1.0)
-        )
+            component_x - image_center_x
+        ) / max(width / 2.0, 1.0)
 
         normalized_y = (
-            (component_y - image_center_y) /
-            max(height / 2.0, 1.0)
-        )
+            component_y - image_center_y
+        ) / max(height / 2.0, 1.0)
 
         distance_squared = (
             normalized_x ** 2 +
             normalized_y ** 2
         )
 
-        center_weight = np.exp(-2.5 * distance_squared)
+        center_weight = np.exp(
+            -2.5 * distance_squared
+        )
 
         touches_border = (
             x <= 1 or
@@ -106,24 +224,70 @@ def _find_digit_box(binary_image: np.ndarray):
             y + box_height >= height - 1
         )
 
-        border_weight = 0.05 if touches_border else 1.0
+        border_weight = (
+            0.05 if touches_border else 1.0
+        )
 
         score = (
             area *
-            (0.35 + 0.65 * center_weight) *
+            (0.30 + 0.70 * center_weight) *
             border_weight
         )
 
         if score > best_score:
             best_score = score
-            best_box = (x, y, box_width, box_height)
+            best_label = label_number
 
-    if best_box is None:
+    if best_label is None:
         raise ValueError(
-            "No digit was found. Write a darker and larger digit."
+            "No complete digit was found."
         )
 
-    return best_box
+    # Select original pixels belonging to the grouped component.
+    group_mask = np.zeros_like(binary_image)
+
+    group_mask[labels == best_label] = 255
+
+    selected_digit = cv2.bitwise_and(
+        binary_image,
+        group_mask
+    )
+
+    digit_points = cv2.findNonZero(
+        selected_digit
+    )
+
+    if digit_points is None:
+        raise ValueError(
+            "The selected digit contains no pixels."
+        )
+
+    x, y, box_width, box_height = (
+        cv2.boundingRect(digit_points)
+    )
+
+    # Add a little padding around the complete digit.
+    padding = max(
+        2,
+        int(max(box_width, box_height) * 0.06)
+    )
+
+    x = max(0, x - padding)
+    y = max(0, y - padding)
+
+    right = min(
+        width,
+        x + box_width + 2 * padding
+    )
+
+    bottom = min(
+        height,
+        y + box_height + 2 * padding
+    )
+
+    return x, y, right - x, bottom - y
+
+
 
 
 def _place_on_mnist_canvas(
@@ -279,6 +443,7 @@ def image_to_mnist(
 
     # Otsu chooses a threshold automatically. Limiting the threshold
     # prevents light paper texture from becoming foreground.
+    # Global Otsu threshold.
     otsu_threshold, _ = cv2.threshold(
         flattened,
         0,
@@ -287,44 +452,76 @@ def image_to_mnist(
     )
 
     threshold_value = int(
-        np.clip(otsu_threshold, 50, 215)
+        np.clip(
+            otsu_threshold,
+            50,
+            230
+        )
     )
 
-    _, binary = cv2.threshold(
+    _, global_binary = cv2.threshold(
         flattened,
         threshold_value,
         255,
         cv2.THRESH_BINARY_INV
     )
 
-    # Join small breaks in pen strokes.
-    morphology_size = _make_odd(minimum_dimension * 0.006)
-    morphology_size = min(morphology_size, 9)
-
-    morphology_kernel = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE,
-        (morphology_size, morphology_size)
+    # Adaptive threshold preserves faint or shadowed stroke areas.
+    adaptive_block_size = _make_odd(
+        np.clip(
+            minimum_dimension * 0.15,
+            31,
+            151
+        )
     )
 
-    binary = cv2.morphologyEx(
-        binary,
-        cv2.MORPH_CLOSE,
-        morphology_kernel,
-        iterations=1
+    adaptive_binary = cv2.adaptiveThreshold(
+        flattened,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        adaptive_block_size,
+        8
     )
 
-    # Remove anything touching the extreme edge, such as shadows
-    # from the edge of the paper.
-    border_size = max(1, int(minimum_dimension * 0.01))
+    # Prevent very light paper texture from being selected.
+    dark_pixel_mask = np.where(
+        flattened < 238,
+        255,
+        0
+    ).astype(np.uint8)
 
-    binary[:border_size, :] = 0
-    binary[-border_size:, :] = 0
-    binary[:, :border_size] = 0
-    binary[:, -border_size:] = 0
+    adaptive_binary = cv2.bitwise_and(
+        adaptive_binary,
+        dark_pixel_mask
+    )
 
+    # Combine strong and faint parts of the pen stroke.
+    binary_before_repair = cv2.bitwise_or(
+        global_binary,
+        adaptive_binary
+    )
+
+    # Remove border shadows before performing closing.
+    border_size = max(
+        1,
+        int(minimum_dimension * 0.01)
+    )
+
+    binary_before_repair[:border_size, :] = 0
+    binary_before_repair[-border_size:, :] = 0
+    binary_before_repair[:, :border_size] = 0
+    binary_before_repair[:, -border_size:] = 0
+
+    # Repair broken strokes.
+    binary = _repair_broken_strokes(
+        binary_before_repair
+    )
+
+    # Only remove extremely small noise.
     minimum_component_area = max(
-        8,
-        int(height * width * 0.00005)
+        4,
+        int(height * width * 0.000015)
     )
 
     binary = _remove_small_components(
@@ -334,8 +531,11 @@ def image_to_mnist(
 
     if cv2.countNonZero(binary) == 0:
         raise ValueError(
-            "No digit was detected. Use a black pen and sufficient light."
+            "No digit was detected. Use a darker pen."
         )
+            
+        
+        
 
     x, y, box_width, box_height = _find_digit_box(binary)
 
@@ -358,12 +558,28 @@ def image_to_mnist(
             os.path.join(debug_directory, "02_flattened.png"),
             flattened
         )
+        
         cv2.imwrite(
-            os.path.join(debug_directory, "03_binary.png"),
+            os.path.join(
+                debug_directory,
+                "03_before_repair.png"
+            ),
+            binary_before_repair
+        )
+
+        cv2.imwrite(
+            os.path.join(
+                debug_directory,
+                "04_after_repair.png"
+            ),
             binary
         )
+
         cv2.imwrite(
-            os.path.join(debug_directory, "04_mnist.png"),
+            os.path.join(
+                debug_directory,
+                "05_final_mnist.png"
+            ),
             mnist_image
         )
 

@@ -1,4 +1,4 @@
 *.exe
 
-image/
-debug/
+digit_recognition/image/
+digit_recognition/debug/
