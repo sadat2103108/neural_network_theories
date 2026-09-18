@@ -1,521 +1,379 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-
     <meta charset="UTF-8">
 
-    <title>MNIST Digit Classifier</title>
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Digit Recognition</title>
 
     <style>
-
-        * {
-            box-sizing: border-box;
-        }
-
         body {
-            margin: 0;
-
-            min-height: 100vh;
-
-            background: #0b0b12;
-            color: #f3f3f8;
-
             font-family: Arial, sans-serif;
-
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            text-align: center;
+            margin: 20px;
         }
 
-
-        .app {
-            width: min(1100px, 95vw);
-
-            display: grid;
-            grid-template-columns: 1fr 300px;
-
-            gap: 30px;
+        #camera-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: auto;
         }
 
-
-        .card {
-            background: #16161f;
-
-            border: 1px solid #2a2a3a;
-
-            border-radius: 16px;
-
-            padding: 24px;
+        video {
+            width: 100%;
+            display: block;
+            background-color: black;
         }
 
-
-        .header {
-            margin-bottom: 20px;
+        #guide {
+            position: absolute;
+            border: 3px solid red;
+            box-sizing: border-box;
+            pointer-events: none;
         }
 
-
-        .header h1 {
-            margin: 0 0 8px 0;
-
-            font-size: 32px;
-        }
-
-
-        .header p {
-            margin: 0;
-
-            color: #8b8ba3;
-
+        button {
+            margin: 10px;
+            padding: 12px 20px;
             font-size: 16px;
         }
 
-
-        .canvas-wrapper {
-            width: 100%;
-
-            display: flex;
-            justify-content: center;
-            align-items: center;
+        #capture {
+            display: none;
         }
 
+        #status {
+            margin-top: 15px;
+        }
+
+        #prediction {
+            font-size: 50px;
+            font-weight: bold;
+            margin-top: 20px;
+        }
 
         canvas {
-            width: 600px;
-            height: 600px;
-
-            max-width: 100%;
-
-            background: white;
-
-            border-radius: 8px;
-
-            cursor: crosshair;
-
-            touch-action: none;
+            display: none;
         }
-
-
-        .side {
-            display: flex;
-            flex-direction: column;
-
-            gap: 20px;
-        }
-
-
-        .prediction-title {
-            color: #8b8ba3;
-
-            font-size: 14px;
-
-            font-weight: bold;
-
-            letter-spacing: 1px;
-        }
-
-
-        .prediction {
-            height: 180px;
-
-            display: flex;
-
-            justify-content: center;
-            align-items: center;
-
-            background: #1b1b27;
-
-            border: 1px solid #2a2a3a;
-
-            border-radius: 12px;
-
-            font-size: 100px;
-
-            font-weight: bold;
-
-            color: #37e6b3;
-        }
-
-
-        button {
-            width: 100%;
-
-            padding: 18px;
-
-            border: none;
-
-            border-radius: 10px;
-
-            font-size: 18px;
-
-            font-weight: bold;
-
-            cursor: pointer;
-        }
-
-
-        #predict {
-            background: #8b7bf7;
-
-            color: white;
-
-            margin-bottom: 10px;
-        }
-
-
-        #predict:hover {
-            background: #9d8ffb;
-        }
-
-
-        #clear {
-            background: #292938;
-
-            color: white;
-        }
-
-
-        #clear:hover {
-            background: #353548;
-        }
-
-
-        .status {
-            margin-top: 15px;
-
-            color: #8b8ba3;
-
-            font-size: 14px;
-
-            text-align: center;
-        }
-
-
-        @media (max-width: 850px) {
-
-            .app {
-                grid-template-columns: 1fr;
-            }
-
-            canvas {
-                width: min(600px, 90vw);
-                height: min(600px, 90vw);
-            }
-
-        }
-
     </style>
-
 </head>
-
 
 <body>
 
-<div class="app">
+    <h1>MNIST Digit Recognition</h1>
 
+    <div id="camera-container">
+        <video
+            id="video"
+            autoplay
+            playsinline
+            muted
+        ></video>
 
-    <div class="card">
-
-        <div class="header">
-
-            <h1>Digit Classifier</h1>
-
-            <p>
-                Draw a single digit and let the neural network predict it.
-            </p>
-
-        </div>
-
-
-        <div class="canvas-wrapper">
-
-            <canvas
-                id="canvas"
-                width="600"
-                height="600">
-            </canvas>
-
-        </div>
-
+        <div id="guide"></div>
     </div>
 
-
-    <div class="side">
-
-
-        <div class="card">
-
-            <div class="prediction-title">
-                PREDICTION
-            </div>
-
-            <div
-                class="prediction"
-                id="prediction">
-                –
-            </div>
-
-        </div>
-
-
-        <div class="card">
-
-            <button id="predict">
-                Predict
-            </button>
-
-            <button id="clear">
-                Clear
-            </button>
-
-            <div
-                class="status"
-                id="status">
-                Draw a digit
-            </div>
-
-        </div>
-
-
-    </div>
-
-
-</div>
-
-
-<script>
-
-const canvas = document.getElementById("canvas");
-
-const ctx = canvas.getContext("2d");
-
-const prediction = document.getElementById("prediction");
-
-const status = document.getElementById("status");
-
-
-let drawing = false;
-
-let lastX = 0;
-let lastY = 0;
-
-
-const BRUSH_SIZE = 40;
-
-
-function getPosition(event) {
-
-    const rect = canvas.getBoundingClientRect();
-
-    return {
-        x: (event.clientX - rect.left)
-            * canvas.width
-            / rect.width,
-
-        y: (event.clientY - rect.top)
-            * canvas.height
-            / rect.height
-    };
-
-}
-
-
-function startDrawing(event) {
-
-    drawing = true;
-
-    const pos = getPosition(event);
-
-    lastX = pos.x;
-    lastY = pos.y;
-
-    drawDot(pos.x, pos.y);
-
-}
-
-
-function draw(event) {
-
-    if (!drawing)
-        return;
-
-
-    const pos = getPosition(event);
-
-
-    ctx.beginPath();
-
-    ctx.moveTo(lastX, lastY);
-
-    ctx.lineTo(pos.x, pos.y);
-
-    ctx.strokeStyle = "black";
-
-    ctx.lineWidth = BRUSH_SIZE;
-
-    ctx.lineCap = "round";
-
-    ctx.lineJoin = "round";
-
-    ctx.stroke();
-
-
-    lastX = pos.x;
-    lastY = pos.y;
-
-}
-
-
-function drawDot(x, y) {
-
-    ctx.beginPath();
-
-    ctx.arc(
-        x,
-        y,
-        BRUSH_SIZE / 2,
-        0,
-        Math.PI * 2
-    );
-
-    ctx.fillStyle = "black";
-
-    ctx.fill();
-
-}
-
-
-function stopDrawing() {
-
-    drawing = false;
-
-}
-
-
-canvas.addEventListener(
-    "pointerdown",
-    startDrawing
-);
-
-
-canvas.addEventListener(
-    "pointermove",
-    draw
-);
-
-
-canvas.addEventListener(
-    "pointerup",
-    stopDrawing
-);
-
-
-canvas.addEventListener(
-    "pointercancel",
-    stopDrawing
-);
-
-
-canvas.addEventListener(
-    "pointerleave",
-    stopDrawing
-);
-
-
-// ------------------------------------------------------------
-// Clear
-// ------------------------------------------------------------
-
-document
-    .getElementById("clear")
-    .addEventListener("click", () => {
-
-        ctx.fillStyle = "white";
-
-        ctx.fillRect(
-            0,
-            0,
-            canvas.width,
-            canvas.height
+    <button id="capture" type="button">
+        Capture & Predict
+    </button>
+
+    <button id="clear" type="button">
+        Clear
+    </button>
+
+    <div id="status">Starting camera...</div>
+
+    <div id="prediction"></div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+        const guide = document.getElementById("guide");
+
+        const captureButton =
+            document.getElementById("capture");
+
+        const clearButton =
+            document.getElementById("clear");
+
+        const statusElement =
+            document.getElementById("status");
+
+        const predictionElement =
+            document.getElementById("prediction");
+
+        let stream = null;
+
+
+        function positionGuide() {
+            if (
+                video.clientWidth === 0 ||
+                video.clientHeight === 0
+            ) {
+                return;
+            }
+
+            const size = Math.min(
+                video.clientWidth,
+                video.clientHeight
+            ) * 0.70;
+
+            guide.style.width = size + "px";
+            guide.style.height = size + "px";
+
+            guide.style.left =
+                (video.clientWidth - size) / 2 + "px";
+
+            guide.style.top =
+                (video.clientHeight - size) / 2 + "px";
+        }
+
+
+        async function startCamera() {
+            try {
+                statusElement.textContent =
+                    "Requesting camera permission...";
+
+                if (
+                    !navigator.mediaDevices ||
+                    !navigator.mediaDevices.getUserMedia
+                ) {
+                    throw new Error(
+                        "Camera API is not available. " +
+                        "Open the app using http://127.0.0.1:5000"
+                    );
+                }
+
+                stream =
+                    await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: {
+                                ideal: "environment"
+                            }
+                        },
+                        audio: false
+                    });
+
+                console.log(
+                    "Camera permission granted:",
+                    stream
+                );
+
+                video.srcObject = stream;
+
+                statusElement.textContent =
+                    "Camera permission granted. Starting camera...";
+
+                // Wait until the camera video has metadata.
+                await new Promise((resolve) => {
+                    if (video.readyState >= 1) {
+                        resolve();
+                    } else {
+                        video.addEventListener(
+                            "loadedmetadata",
+                            resolve,
+                            { once: true }
+                        );
+                    }
+                });
+
+                // The previous code had: await ();
+                // This is the correct statement.
+                await video.play();
+
+                console.log("Video playing");
+                console.log(
+                    "Video dimensions:",
+                    video.videoWidth,
+                    video.videoHeight
+                );
+
+                positionGuide();
+
+                statusElement.textContent = "Camera ready";
+
+                captureButton.style.display =
+                    "inline-block";
+
+            } catch (error) {
+                console.error("Camera error:", error);
+
+                statusElement.textContent =
+                    "Camera error: " +
+                    error.name +
+                    " - " +
+                    error.message;
+            }
+        }
+
+
+        captureButton.addEventListener(
+            "click",
+            async function () {
+                console.log("Capture clicked");
+
+                if (
+                    !stream ||
+                    video.videoWidth === 0 ||
+                    video.videoHeight === 0
+                ) {
+                    statusElement.textContent =
+                        "Camera is not ready.";
+                    return;
+                }
+
+                const videoRect =
+                    video.getBoundingClientRect();
+
+                const guideRect =
+                    guide.getBoundingClientRect();
+
+                const scaleX =
+                    video.videoWidth / videoRect.width;
+
+                const scaleY =
+                    video.videoHeight / videoRect.height;
+
+                let sourceX =
+                    (guideRect.left - videoRect.left) *
+                    scaleX;
+
+                let sourceY =
+                    (guideRect.top - videoRect.top) *
+                    scaleY;
+
+                let sourceWidth =
+                    guideRect.width * scaleX;
+
+                let sourceHeight =
+                    guideRect.height * scaleY;
+
+                sourceX = Math.max(0, sourceX);
+                sourceY = Math.max(0, sourceY);
+
+                sourceWidth = Math.min(
+                    sourceWidth,
+                    video.videoWidth - sourceX
+                );
+
+                sourceHeight = Math.min(
+                    sourceHeight,
+                    video.videoHeight - sourceY
+                );
+
+                canvas.width = Math.max(
+                    1,
+                    Math.round(sourceWidth)
+                );
+
+                canvas.height = Math.max(
+                    1,
+                    Math.round(sourceHeight)
+                );
+
+                const context =
+                    canvas.getContext("2d");
+
+                context.drawImage(
+                    video,
+                    sourceX,
+                    sourceY,
+                    sourceWidth,
+                    sourceHeight,
+                    0,
+                    0,
+                    canvas.width,
+                    canvas.height
+                );
+
+                const imageData =
+                    canvas.toDataURL("image/png");
+
+                statusElement.textContent =
+                    "Sending image to server...";
+
+                try {
+                    const response = await fetch(
+                        "/predict",
+                        {
+                            method: "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
+
+                            body: JSON.stringify({
+                                image: imageData
+                            })
+                        }
+                    );
+
+                    const result =
+                        await response.json();
+
+                    console.log(
+                        "Server response:",
+                        result
+                    );
+
+                    if (!response.ok || result.error) {
+                        statusElement.textContent =
+                            "Error: " +
+                            (
+                                result.error ||
+                                "Prediction failed"
+                            );
+
+                        return;
+                    }
+
+                    predictionElement.textContent =
+                        result.prediction;
+
+                    statusElement.textContent =
+                        "Prediction complete.";
+
+                } catch (error) {
+                    console.error(
+                        "Prediction error:",
+                        error
+                    );
+
+                    statusElement.textContent =
+                        "Prediction error: " +
+                        error.message;
+                }
+            }
         );
 
-        prediction.textContent = "–";
 
-        status.textContent = "Draw a digit";
+        clearButton.addEventListener(
+            "click",
+            function () {
+                predictionElement.textContent = "";
 
-    });
-
-
-// ------------------------------------------------------------
-// Predict
-// ------------------------------------------------------------
-
-document
-    .getElementById("predict")
-    .addEventListener("click", async () => {
-
-        status.textContent = "Predicting...";
-
-        const image = canvas.toDataURL("image/png");
+                statusElement.textContent = stream
+                    ? "Camera ready"
+                    : "Camera is not ready";
+            }
+        );
 
 
-        try {
+        window.addEventListener(
+            "resize",
+            positionGuide
+        );
 
-            const response = await fetch(
-                "/predict",
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-
-                    body: JSON.stringify({
-                        image: image
-                    })
-                }
-            );
-
-
-            const data = await response.json();
-
-
-            prediction.textContent =
-                data.prediction;
-
-            status.textContent =
-                "Prediction complete";
-
-        }
-
-        catch (error) {
-
-            console.error(error);
-
-            status.textContent =
-                "Prediction failed";
-
-        }
-
-    });
-
-
-// ------------------------------------------------------------
-// Initialize white canvas
-// ------------------------------------------------------------
-
-ctx.fillStyle = "white";
-
-ctx.fillRect(
-    0,
-    0,
-    canvas.width,
-    canvas.height
-);
-
-</script>
-
+        startCamera();
+    </script>
 
 </body>
-
 </html>
