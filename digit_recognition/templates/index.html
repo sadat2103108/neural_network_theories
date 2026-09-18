@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <title>MNIST Digit Classifier</title>
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+
+            min-height: 100vh;
+
+            background: #0b0b12;
+            color: #f3f3f8;
+
+            font-family: Arial, sans-serif;
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+
+        .app {
+            width: min(1100px, 95vw);
+
+            display: grid;
+            grid-template-columns: 1fr 300px;
+
+            gap: 30px;
+        }
+
+
+        .card {
+            background: #16161f;
+
+            border: 1px solid #2a2a3a;
+
+            border-radius: 16px;
+
+            padding: 24px;
+        }
+
+
+        .header {
+            margin-bottom: 20px;
+        }
+
+
+        .header h1 {
+            margin: 0 0 8px 0;
+
+            font-size: 32px;
+        }
+
+
+        .header p {
+            margin: 0;
+
+            color: #8b8ba3;
+
+            font-size: 16px;
+        }
+
+
+        .canvas-wrapper {
+            width: 100%;
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+
+        canvas {
+            width: 600px;
+            height: 600px;
+
+            max-width: 100%;
+
+            background: white;
+
+            border-radius: 8px;
+
+            cursor: crosshair;
+
+            touch-action: none;
+        }
+
+
+        .side {
+            display: flex;
+            flex-direction: column;
+
+            gap: 20px;
+        }
+
+
+        .prediction-title {
+            color: #8b8ba3;
+
+            font-size: 14px;
+
+            font-weight: bold;
+
+            letter-spacing: 1px;
+        }
+
+
+        .prediction {
+            height: 180px;
+
+            display: flex;
+
+            justify-content: center;
+            align-items: center;
+
+            background: #1b1b27;
+
+            border: 1px solid #2a2a3a;
+
+            border-radius: 12px;
+
+            font-size: 100px;
+
+            font-weight: bold;
+
+            color: #37e6b3;
+        }
+
+
+        button {
+            width: 100%;
+
+            padding: 18px;
+
+            border: none;
+
+            border-radius: 10px;
+
+            font-size: 18px;
+
+            font-weight: bold;
+
+            cursor: pointer;
+        }
+
+
+        #predict {
+            background: #8b7bf7;
+
+            color: white;
+
+            margin-bottom: 10px;
+        }
+
+
+        #predict:hover {
+            background: #9d8ffb;
+        }
+
+
+        #clear {
+            background: #292938;
+
+            color: white;
+        }
+
+
+        #clear:hover {
+            background: #353548;
+        }
+
+
+        .status {
+            margin-top: 15px;
+
+            color: #8b8ba3;
+
+            font-size: 14px;
+
+            text-align: center;
+        }
+
+
+        @media (max-width: 850px) {
+
+            .app {
+                grid-template-columns: 1fr;
+            }
+
+            canvas {
+                width: min(600px, 90vw);
+                height: min(600px, 90vw);
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<div class="app">
+
+
+    <div class="card">
+
+        <div class="header">
+
+            <h1>Digit Classifier</h1>
+
+            <p>
+                Draw a single digit and let the neural network predict it.
+            </p>
+
+        </div>
+
+
+        <div class="canvas-wrapper">
+
+            <canvas
+                id="canvas"
+                width="600"
+                height="600">
+            </canvas>
+
+        </div>
+
+    </div>
+
+
+    <div class="side">
+
+
+        <div class="card">
+
+            <div class="prediction-title">
+                PREDICTION
+            </div>
+
+            <div
+                class="prediction"
+                id="prediction">
+                –
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <button id="predict">
+                Predict
+            </button>
+
+            <button id="clear">
+                Clear
+            </button>
+
+            <div
+                class="status"
+                id="status">
+                Draw a digit
+            </div>
+
+        </div>
+
+
+    </div>
+
+
+</div>
+
+
+<script>
+
+const canvas = document.getElementById("canvas");
+
+const ctx = canvas.getContext("2d");
+
+const prediction = document.getElementById("prediction");
+
+const status = document.getElementById("status");
+
+
+let drawing = false;
+
+let lastX = 0;
+let lastY = 0;
+
+
+const BRUSH_SIZE = 40;
+
+
+function getPosition(event) {
+
+    const rect = canvas.getBoundingClientRect();
+
+    return {
+        x: (event.clientX - rect.left)
+            * canvas.width
+            / rect.width,
+
+        y: (event.clientY - rect.top)
+            * canvas.height
+            / rect.height
+    };
+
+}
+
+
+function startDrawing(event) {
+
+    drawing = true;
+
+    const pos = getPosition(event);
+
+    lastX = pos.x;
+    lastY = pos.y;
+
+    drawDot(pos.x, pos.y);
+
+}
+
+
+function draw(event) {
+
+    if (!drawing)
+        return;
+
+
+    const pos = getPosition(event);
+
+
+    ctx.beginPath();
+
+    ctx.moveTo(lastX, lastY);
+
+    ctx.lineTo(pos.x, pos.y);
+
+    ctx.strokeStyle = "black";
+
+    ctx.lineWidth = BRUSH_SIZE;
+
+    ctx.lineCap = "round";
+
+    ctx.lineJoin = "round";
+
+    ctx.stroke();
+
+
+    lastX = pos.x;
+    lastY = pos.y;
+
+}
+
+
+function drawDot(x, y) {
+
+    ctx.beginPath();
+
+    ctx.arc(
+        x,
+        y,
+        BRUSH_SIZE / 2,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fillStyle = "black";
+
+    ctx.fill();
+
+}
+
+
+function stopDrawing() {
+
+    drawing = false;
+
+}
+
+
+canvas.addEventListener(
+    "pointerdown",
+    startDrawing
+);
+
+
+canvas.addEventListener(
+    "pointermove",
+    draw
+);
+
+
+canvas.addEventListener(
+    "pointerup",
+    stopDrawing
+);
+
+
+canvas.addEventListener(
+    "pointercancel",
+    stopDrawing
+);
+
+
+canvas.addEventListener(
+    "pointerleave",
+    stopDrawing
+);
+
+
+// ------------------------------------------------------------
+// Clear
+// ------------------------------------------------------------
+
+document
+    .getElementById("clear")
+    .addEventListener("click", () => {
+
+        ctx.fillStyle = "white";
+
+        ctx.fillRect(
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
+
+        prediction.textContent = "–";
+
+        status.textContent = "Draw a digit";
+
+    });
+
+
+// ------------------------------------------------------------
+// Predict
+// ------------------------------------------------------------
+
+document
+    .getElementById("predict")
+    .addEventListener("click", async () => {
+
+        status.textContent = "Predicting...";
+
+        const image = canvas.toDataURL("image/png");
+
+
+        try {
+
+            const response = await fetch(
+                "/predict",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        image: image
+                    })
+                }
+            );
+
+
+            const data = await response.json();
+
+
+            prediction.textContent =
+                data.prediction;
+
+            status.textContent =
+                "Prediction complete";
+
+        }
+
+        catch (error) {
+
+            console.error(error);
+
+            status.textContent =
+                "Prediction failed";
+
+        }
+
+    });
+
+
+// ------------------------------------------------------------
+// Initialize white canvas
+// ------------------------------------------------------------
+
+ctx.fillStyle = "white";
+
+ctx.fillRect(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+);
+
+</script>
+
+
+</body>
+
+</html>
